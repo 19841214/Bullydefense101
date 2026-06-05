@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>資安防線：看破手腳防範釣魚實戰 | Cyber Security Detective</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & Noto Sans TC -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- html2canvas for PNG Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background: radial-gradient(circle at 50% 50%, #0b0f19 0%, #030712 100%);
+            min-height: 100vh;
+        }
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.85);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .mock-browser-chrome {
+            background: #1e293b;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-bottom: none;
+        }
+        .mock-browser-body {
+            background: #ffffff;
+            border-bottom-left-radius: 12px;
+            border-bottom-right-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #1e293b;
+        }
+        /* Custom Glowing Hotspots for interactive detection */
+        .hotspot-pulse {
+            position: relative;
+        }
+        .hotspot-pulse::after {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            border: 2px solid #ef4444;
+            border-radius: inherit;
+            animation: pulse-ring 1.5s infinite;
+            pointer-events: none;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 1; }
+            100% { transform: scale(1.3); opacity: 0; }
+        }
+        .detected-glow {
+            box-shadow: 0 0 15px rgba(52, 211, 153, 0.6);
+            border-color: #10b981 !important;
+        }
+        .scam-glow {
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.6);
+            border-color: #ef4444 !important;
+        }
+        /* Neon effects for Certificate */
+        .neon-border {
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.15), inset 0 0 15px rgba(99, 102, 241, 0.1);
+        }
+        .neon-text-green {
+            text-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+        }
+        /* Hidden scrollbar helper for visual elegance */
+        .scrollbar-none::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-none {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="text-slate-100 flex flex-col justify-between min-h-screen">
+
+    <header class="border-b border-slate-800 bg-slate-950/90 backdrop-blur sticky top-0 z-50 px-4 py-3">
+        <div class="max-w-6xl mx-auto flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <div class="bg-gradient-to-tr from-amber-500 to-rose-600 p-2.5 rounded-xl text-white shadow-lg">
+                    <i class="fa-solid fa-magnifying-glass-chart text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="font-extrabold text-sm md:text-lg tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-rose-400">
+                        CYBER DETECTIVE
+                    </h1>
+                    <p class="text-[10px] md:text-xs text-slate-400 uppercase">高仿真釣魚判斷訓練器</p>
+                </div>
+            </div>
+            
+            <!-- Game Scoreboard / Progress Indicator -->
+            <div class="flex items-center space-x-2 md:space-x-3">
+                <div class="bg-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-800 text-[11px] md:text-sm font-semibold flex items-center space-x-1 md:space-x-2">
+                    <span class="text-slate-400">防護值 Shield:</span>
+                    <span id="scoreValue" class="text-emerald-400 font-bold">100%</span>
+                </div>
+                <div class="bg-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-800 text-[11px] md:text-sm font-semibold flex items-center space-x-1 md:space-x-2">
+                    <span class="text-slate-400">已偵破:</span>
+                    <span id="cluesFoundValue" class="text-amber-400 font-bold">0 / 3</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow max-w-6xl w-full mx-auto p-4 md:p-6 flex flex-col justify-start space-y-6">
+        
+        <!-- Toast Notification system (No Alert Policy) -->
+        <div id="customToast" class="fixed bottom-6 right-6 transform translate-y-20 opacity-0 transition-all duration-300 z-50 glass-panel px-6 py-4 rounded-xl shadow-2xl border-l-4 border-amber-500 flex items-center space-x-3 max-w-md pointer-events-none">
+            <div id="toastIcon" class="text-amber-400 text-xl"><i class="fa-solid fa-circle-info"></i></div>
+            <div>
+                <h4 id="toastTitle" class="font-bold text-sm text-slate-200">提示</h4>
+                <p id="toastMessage" class="text-xs text-slate-400">提示內容</p>
+            </div>
+        </div>
+
+        <!-- Progress Tracker Bar -->
+        <div class="glass-panel p-4 rounded-xl flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+                <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/25 px-2.5 py-1 rounded text-xs font-bold uppercase">
+                    偵訊進度 Tracker
+                </span>
+                <span class="text-xs text-slate-400 hidden sm:inline">請依序檢查三個高風險介面，抓出藏在細節中的貓膩！</span>
+            </div>
+            <!-- Progress circles -->
+            <div class="flex items-center space-x-4">
+                <span id="stepIndicator-0" class="flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold transition-all bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20">1</span>
+                <div class="w-8 h-0.5 bg-slate-800" id="line-1"></div>
+                <span id="stepIndicator-1" class="flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold transition-all bg-slate-800 text-slate-400">2</span>
+                <div class="w-8 h-0.5 bg-slate-800" id="line-2"></div>
+                <span id="stepIndicator-2" class="flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold transition-all bg-slate-800 text-slate-400">3</span>
+            </div>
+        </div>
+
+        <section id="scenariosWrapper" class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+            
+            <!-- LEFT PANEL: Interactive Browser Simulator (Takes 7 Cols) -->
+            <div class="lg:col-span-7 flex flex-col">
+                <!-- Browser Bar -->
+                <div class="mock-browser-chrome px-3 sm:px-4 py-3 flex items-center justify-between gap-2 sm:gap-4">
+                    <!-- Control dots -->
+                    <div class="flex items-center space-x-1.5 sm:space-x-2">
+                        <span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-rose-500 inline-block"></span>
+                        <span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-amber-500 inline-block"></span>
+                        <span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-emerald-500 inline-block"></span>
+                    </div>
+                    <!-- Navigation arrows -->
+                    <div class="hidden sm:flex items-center space-x-3 text-slate-400 text-xs">
+                        <i class="fa-solid fa-arrow-left"></i>
+                        <i class="fa-solid fa-arrow-right"></i>
+                        <i class="fa-solid fa-rotate-right"></i>
+                    </div>
+                    <!-- Address Bar (CRITICAL CLUE PLACE) -->
+                    <div class="flex-grow bg-slate-900 border border-slate-700/60 rounded-lg px-2 sm:px-3 py-1 flex items-center justify-between text-[10px] sm:text-xs font-mono text-slate-300 relative select-all min-w-0" id="browserAddressBarContainer">
+                        <div class="flex items-center space-x-1.5 flex-grow truncate min-w-0">
+                            <span id="addressBarLockIcon" class="text-amber-400 shrink-0"><i class="fa-solid fa-lock-open"></i></span>
+                            <span id="browserURL" class="truncate">https://1nstagram.com-auth-secure.net/login</span>
+                        </div>
+                        <span class="text-[9px] sm:text-[10px] text-rose-400 font-bold ml-1 border border-rose-500/25 px-1 rounded cursor-help shrink-0" id="notSecureBadge">不安全</span>
+                    </div>
+                    <!-- Mode Toggle Badge -->
+                    <div class="shrink-0">
+                        <button onclick="toggleMicroscope()" id="microscopeToggleBtn" class="bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-[9px] sm:text-[11px] font-bold px-2 sm:px-3 py-1.5 rounded-lg flex items-center space-x-1 transition-all shadow-md">
+                            <i class="fa-solid fa-eye"></i>
+                            <span id="microscopeBtnText" class="hidden xs:inline">開啟顯微鏡</span>
+                            <span id="microscopeBtnTextMobile" class="xs:hidden">顯微鏡</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="browserViewport" class="mock-browser-body p-3 sm:p-6 flex-grow flex flex-col justify-center items-center min-h-[420px] select-none relative overflow-hidden">
+                    <!-- Dynamic HTML content injected here by JS -->
+                </div>
+            </div>
+
+            <!-- RIGHT PANEL: Investigation & Explanation (Takes 5 Cols) -->
+            <div class="lg:col-span-5 flex flex-col justify-between space-y-4">
+                <!-- Case Information and Rules -->
+                <div class="glass-panel p-5 rounded-xl space-y-4 flex-grow flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center space-x-2 border-b border-slate-800 pb-3 mb-4">
+                            <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                            <h3 class="font-bold text-sm text-slate-300 tracking-wider">案情分析與偵測工具</h3>
+                        </div>
+
+                        <div class="space-y-3">
+                            <div class="bg-slate-900/60 p-4 rounded-xl border border-indigo-500/10">
+                                <h4 class="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1" id="caseLabel">CASE 01: 社群獵奇陷阱</h4>
+                                <h3 class="text-base md:text-lg font-extrabold text-slate-200" id="caseTitle">誰在偷偷看你的限時動態？</h3>
+                                <p class="text-xs text-slate-400 mt-1.5 leading-relaxed" id="caseDescription">
+                                    同學在社群收到一則精美私訊，宣稱「點擊連結登入，即可查看誰在暗戀你、偷偷拜訪你的個人檔案！」這會是真實的官方工具，還是另有玄機？
+                                </p>
+                            </div>
+
+                            <!-- Interactive Tool Checklist -->
+                            <div class="bg-slate-900/40 p-4 rounded-xl border border-slate-800 space-y-3">
+                                <div class="flex items-center justify-between text-xs">
+                                    <span class="font-semibold text-slate-400"><i class="fa-solid fa-list-check text-indigo-400 mr-1.5"></i> 必須揪出的貓膩清單 :</span>
+                                    <span class="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 font-mono">
+                                        請點選左側網頁抓漏
+                                    </span>
+                                </div>
+                                <div id="clueChecklist" class="space-y-2">
+                                    <!-- Dynamic Checklist Injected here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Decisive Action Area -->
+                    <div class="pt-4 border-t border-slate-800 space-y-3">
+                        <p class="text-xs text-slate-400 text-center">
+                            🔍 仔細觀察左側頁面並開啟「顯微鏡模式」找出蛛絲馬跡。你該如何決策？
+                        </p>
+                        
+                        <div class="grid grid-cols-2 gap-3">
+                            <!-- Safe Guard Action Button -->
+                            <button onclick="commitDecision(true)" id="btnGuard" class="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold py-3 px-2 rounded-xl transition-all shadow-lg hover:shadow-emerald-500/10 flex flex-col items-center justify-center space-y-1">
+                                <i class="fa-solid fa-shield-halved text-base"></i>
+                                <span>識破騙局 • 守護素材</span>
+                            </button>
+
+                            <!-- Risk Action Button (Submit) -->
+                            <button onclick="commitDecision(false)" id="btnSubmit" class="w-full bg-slate-900 hover:bg-rose-950/30 border border-slate-800 hover:border-rose-500/40 text-rose-400 text-xs font-bold py-3 px-2 rounded-xl transition-all flex flex-col items-center justify-center space-y-1">
+                                <i class="fa-solid fa-arrow-right-to-bracket text-base"></i>
+                                <span>填寫並登入 / 點擊</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="explanationCard" class="hidden glass-panel p-5 rounded-xl border border-sky-500/30 space-y-3 animate-fade-in">
+                    <div class="flex items-center justify-between">
+                        <span id="decisionFeedbackBadge" class="px-2.5 py-1 rounded text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            正確決策 Correct!
+                        </span>
+                        <span class="text-xs text-slate-400" id="lossDeductionText">防護盾: -0%</span>
+                    </div>
+                    <div class="space-y-2">
+                        <h4 class="text-xs font-bold text-slate-200">🕵️ 偵探結案報告 (Deep Analysis)</h4>
+                        <p class="text-xs text-slate-300 leading-relaxed" id="explanationText">
+                            分析報告內容...
+                        </p>
+                    </div>
+                    <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-800 text-[11px] text-amber-400 leading-relaxed">
+                        <strong class="text-slate-200 block mb-0.5"><i class="fa-solid fa-triangle-exclamation mr-1"></i> 外洩危險素材警告 :</strong>
+                        <span id="stolenMaterialsText">使用者姓名、大頭貼、密碼。</span>
+                    </div>
+                    <button onclick="advanceNextStage()" id="nextStageBtn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2.5 rounded-lg transition-all flex items-center justify-center space-x-1 shadow-md">
+                        <span>進入下一個高防護測試</span>
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- RESULTS SECTION (WITH IMAGE DOWNLOAD GENERATOR) -->
+        <section id="resultsSection" class="hidden space-y-6">
+            <div class="glass-panel p-6 md:p-10 rounded-2xl border border-emerald-500/30 space-y-8 relative overflow-hidden">
+                <div class="absolute -right-24 -top-24 w-64 h-64 bg-emerald-600/10 rounded-full blur-3xl"></div>
+
+                <!-- Victory Header -->
+                <div class="text-center space-y-3 max-w-2xl mx-auto">
+                    <div class="inline-flex bg-emerald-500/20 text-emerald-300 w-16 h-16 rounded-full items-center justify-center text-3xl shadow-lg mb-2 animate-bounce">
+                        <i class="fa-solid fa-shield-cat"></i>
+                    </div>
+                    <h2 class="text-2xl md:text-3xl font-extrabold text-slate-100">
+                        恭喜！你已順利看穿 3 大高仿真網路陷阱！
+                    </h2>
+                    <p class="text-xs md:text-sm text-slate-400 leading-relaxed">
+                        你展現了優秀的網路偵探警覺度，成功找出了假網域、逼迫時限恐慌、以及不合常理的敏感檔案索求。守住你的「數位素材」，不給惡意威脅者與不肖分子任何籌碼！
+                    </p>
+                </div>
+
+                <!-- Final Evaluation Scores -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl mx-auto">
+                    <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl text-center">
+                        <span class="text-[10px] text-slate-400 uppercase tracking-widest block mb-1">數位素材護盾完好率</span>
+                        <span id="finalShieldRate" class="text-3xl md:text-4xl font-black text-emerald-400">100%</span>
+                    </div>
+                    <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl text-center">
+                        <span class="text-[10px] text-slate-400 uppercase tracking-widest block mb-1">獲得資安大勳章</span>
+                        <span id="finalBadge" class="text-sm md:text-base font-bold text-indigo-300 block mt-2">無懈可擊資安偵探</span>
+                    </div>
+                </div>
+
+                <!-- Interactive Certificate Area -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start max-w-5xl mx-auto">
+                    
+                    <!-- Left Column: Certificate Real-time Inputs -->
+                    <div class="lg:col-span-5 bg-slate-950/80 p-6 rounded-2xl border border-slate-800 space-y-5">
+                        <div class="border-b border-slate-800 pb-3">
+                            <h3 class="text-sm font-bold text-indigo-400 uppercase tracking-wider flex items-center">
+                                <i class="fa-solid fa-pen-to-square mr-2"></i> 訂製我的防衛證書卡
+                            </h3>
+                            <p class="text-[11px] text-slate-400 mt-0.5">輸入姓名與防範宣言，製作專屬防衛證書並下載成 PNG 分享！</p>
+                        </div>
+                        
+                        <div class="space-y-4 text-xs">
+                            <!-- Input 1: Student Name -->
+                            <div>
+                                <label class="block font-bold text-slate-300 mb-1.5">安全防衛官姓名 (Name) :</label>
+                                <input type="text" id="studentNameInput" placeholder="請輸入您的姓名或暱稱" oninput="syncCertificate()" class="w-full bg-slate-900 border border-slate-700 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-slate-200 focus:outline-none transition-colors">
+                            </div>
+
+                            <!-- Input 2: Custom Oath/Declaration -->
+                            <div>
+                                <div class="flex justify-between items-center mb-1.5">
+                                    <label class="block font-bold text-slate-300">自訂防衛誓言宣言 (Declaration) :</label>
+                                    <button onclick="restoreDefaultOath()" class="text-[10px] text-indigo-400 hover:underline">還原預設誓言</button>
+                                </div>
+                                <textarea id="studentOathInput" rows="4" oninput="syncCertificate()" placeholder="在此輸入你個人的安全宣言，例如：「我宣誓，我絕對不貪圖便利而上傳個資...」" class="w-full bg-slate-900 border border-slate-700 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-slate-200 focus:outline-none transition-colors leading-relaxed"></textarea>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="pt-2 space-y-2">
+                            <button onclick="downloadCertificatePNG()" class="w-full bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 active:scale-95 text-white text-xs font-bold py-3 px-4 rounded-xl transition-all shadow-lg hover:shadow-emerald-500/20 flex items-center justify-center space-x-2">
+                                <i class="fa-solid fa-download text-sm"></i>
+                                <span>下載防衛誓言證書 PNG (Download)</span>
+                            </button>
+                            <button onclick="resetTraining()" class="w-full bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-xs py-2 px-4 rounded-xl border border-slate-800 transition-all flex items-center justify-center space-x-1">
+                                <i class="fa-solid fa-rotate-left"></i>
+                                <span>重置挑戰 (Restart Game)</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Visual Premium Certificate Render with Swipe Container for Mobile -->
+                    <div class="lg:col-span-7 flex flex-col items-center w-full min-w-0">
+                        
+                        <!-- Mobile Horizontal Scroll Helper Badge -->
+                        <div class="lg:hidden text-center text-[11px] text-indigo-400/80 mb-2 flex items-center justify-center space-x-1 bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
+                            <i class="fa-solid fa-arrows-left-right animate-pulse"></i>
+                            <span>左右滑動可預覽完整證書卡</span>
+                        </div>
+                        
+                        <!-- Horizontal Scroll Container to maintain desktop proportions beautifully on mobile -->
+                        <div class="w-full overflow-x-auto pb-4 flex justify-start lg:justify-center scrollbar-none">
+                            <div class="min-w-[540px] px-2 flex justify-center w-full">
+                                
+                                <!-- CERTIFICATE DIV TO CAPTURE (Pruned gradient-clip text and FA fonts to resolve blank spaces) -->
+                                <div id="certificateCard" class="w-[540px] h-[400px] bg-gradient-to-br from-slate-950 via-[#0a0f1d] to-slate-950 border-2 border-indigo-500/30 p-8 rounded-2xl relative overflow-hidden neon-border flex flex-col justify-between text-slate-200 shrink-0">
+                                    <!-- Background decorative digital tech grid lines -->
+                                    <div class="absolute inset-0 opacity-[0.03] pointer-events-none" style="background-image: radial-gradient(#fff 1px, transparent 0), radial-gradient(#fff 1px, transparent 0); background-size: 20px 20px; background-position: 0 0, 10px 10px;"></div>
+                                    
+                                    <!-- Glowing Top-Right Tech Accent -->
+                                    <div class="absolute -right-12 -top-12 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
+                                    
+                                    <!-- Certificate Header -->
+                                    <div class="flex justify-between items-start border-b border-indigo-500/20 pb-4 relative z-10">
+                                        <div>
+                                            <div class="text-[10px] tracking-widest text-indigo-400 font-extrabold uppercase font-mono">Cyber Detective School</div>
+                                            <!-- Fixed: Changed from transparent bg-clip-text gradient to high-contrast white to prevent html2canvas blank rendering -->
+                                            <h3 class="text-base md:text-lg font-black tracking-wide text-slate-100">數位安全防衛官認證</h3>
+                                            <p class="text-[8px] text-slate-500">CERTIFICATE OF DIGITAL SECURITY DEFENDER</p>
+                                        </div>
+                                        <div class="text-right text-[9px] font-mono text-indigo-500">
+                                            <div>NO. <span id="certSerial" class="text-slate-300">CD-20260606-A</span></div>
+                                            <div id="certDate" class="text-slate-500">DATE: 2026.06.06</div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Certificate Body Info -->
+                                    <div class="my-5 space-y-3 relative z-10 flex-grow flex flex-col justify-center">
+                                        <div class="text-left">
+                                            <span class="text-[10px] text-slate-400 tracking-wider">茲證明安全防衛官 (Awarded to)</span>
+                                            <h2 id="certName" class="text-xl md:text-2xl font-black text-amber-400 mt-1 pb-1 border-b border-dashed border-slate-800/80 inline-block min-w-[120px] text-left">
+                                                您的姓名
+                                            </h2>
+                                        </div>
+
+                                        <div class="text-slate-300 text-xs leading-relaxed italic bg-slate-900/60 p-3.5 rounded-xl border border-slate-800/80">
+                                            <span class="text-indigo-400 font-mono text-xs block not-italic font-bold mb-1.5 flex items-center">
+                                                <!-- Fixed: Replaced CDN fontawesome with standard inline SVG to prevent CORS rendering blank square -->
+                                                <svg class="w-3.5 h-3.5 inline-block mr-1.5 fill-indigo-400" viewBox="0 0 24 24"><path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z"/></svg>
+                                                我的防衛誓言：
+                                            </span>
+                                            <span id="certOath" class="block text-[11px] text-slate-300 whitespace-pre-wrap leading-relaxed">我誓言守護我的個人「數位素材」，不輕易上傳頭像與身分證件。在點擊任何可疑連結前，我將盯緊網域、保持冷靜！</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Certificate Footer with Official Stamps and Metadata -->
+                                    <div class="flex justify-between items-end border-t border-slate-900 pt-4 relative z-10">
+                                        <div class="flex items-center space-x-3">
+                                            <!-- Dynamic Badge Stamp (Drawn inside canvas cleanly) -->
+                                            <div class="relative w-14 h-14 rounded-full border border-dashed border-emerald-500/30 flex items-center justify-center p-1 bg-emerald-950/20">
+                                                <div class="w-full h-full rounded-full border border-emerald-500/40 flex flex-col items-center justify-center text-center">
+                                                    <span class="text-[7px] text-emerald-400 tracking-tighter uppercase font-mono">Shield Rate</span>
+                                                    <span id="certShieldRate" class="text-xs font-black text-emerald-400 neon-text-green">100%</span>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <span class="text-[8px] text-slate-500 block uppercase font-mono">Verification Status</span>
+                                                <span id="certStatusBadge" class="text-[9px] font-bold text-emerald-400 flex items-center">
+                                                    <!-- Replaced pulsing dot with clean CSS only layout -->
+                                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 inline-block"></span>
+                                                    無懈可擊特級偵探
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <!-- Signature & Golden Quote stamp -->
+                                        <div class="text-right">
+                                            <div class="text-[8.5px] text-slate-500 italic">"If you don't give them data, they have no weapons to bully you."</div>
+                                            <div class="mt-2 text-[10px] text-indigo-400 font-black tracking-widest font-serif italic border-t border-slate-800 pt-1">
+                                                數位安全偵探學校校長
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <!-- App Footer -->
+    <footer class="border-t border-slate-800 bg-slate-950 py-4 px-4 text-center text-[10px] md:text-xs text-slate-500">
+        <div class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-2">
+            <p>© 2026 數位安全偵探學校. 高仿真資安實戰系統.</p>
+            <p>Bilingual Education Resources • Anti-Phishing Core Course</p>
+        </div>
+    </footer>
+
+    <script>
+        // Sound Generator via Web Audio API (Fully self-contained)
+        const playSynthSound = (type) => {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                
+                if (type === 'success') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+                    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // A5
+                    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.3);
+                } else if (type === 'fail') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(260, ctx.currentTime);
+                    osc.frequency.linearRampToValueAtTime(130, ctx.currentTime + 0.25);
+                    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.3);
+                } else if (type === 'click') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(650, ctx.currentTime);
+                    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.08);
+                } else if (type === 'clue') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(880, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.1);
+                    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.2);
+                }
+            } catch (e) {
+                console.log("Audio API blocked or not supported yet.");
+            }
+        };
+
+        // Custom Safe Toast System
+        const showToast = (title, message, borderClass = 'border-amber-500', icon = 'fa-circle-info') => {
+            const toast = document.getElementById('customToast');
+            const toastTitle = document.getElementById('toastTitle');
+            const toastMessage = document.getElementById('toastMessage');
+            const toastIcon = document.getElementById('toastIcon');
+
+            toastTitle.innerText = title;
+            toastMessage.innerText = message;
+            toastIcon.innerHTML = `<i class="fa-solid ${icon}"></i>`;
+            
+            toast.className = `fixed bottom-6 right-6 transform transition-all duration-300 z-50 glass-panel px-6 py-4 rounded-xl shadow-2xl border-l-4 flex items-center space-x-3 max-w-md pointer-events-none translate-y-0 opacity-100 ${borderClass}`;
+            
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3500);
+        };
+
+        // Application State
+        let currentStage = 0;
+        let shieldHealth = 100;
+        let microscopeActive = false;
+        
+        // Tracking found clues for the current stage
+        let foundClues = {}; 
+
+        const scenariosData = [
+            {
+                id: 1,
+                label: "CASE 01: 社群獵奇陷阱",
+                title: "誰在偷偷看你的 Instagram 檔案？",
+                description: "同學收到一則匿名追蹤者的推廣訊息：「點點看下方連結，只要完成登入認證，就能看這週誰在重複查閱你的限時動態喔！」這會是真實的官方功能，還是騙局？",
+                url: "https://1nstagram.com-auth-secure.cc/login/verify-access",
+                urlSecure: false,
+                isPhishing: true,
+                stolenMaterials: "個人 Instagram 帳號密碼、兩步驟驗證碼、綁定備用信箱資訊，極可能被拿來進行勒索、或假冒你發送投資、不雅照垃圾訊息。",
+                correctChoice: true, // Rejecting is correct
+                correctExplanation: "完美識破！Instagram 官方絕對不會透過外部多層域名（如 com-auth-secure.cc）索要你的密碼，也絕對沒有『查閱誰偷偷拜訪首頁』的官方工具。這類型的 Curiosity (好奇心) 心理戰極其常見。",
+                wrongExplanation: "糟糕！你交出了密碼。駭客能直接奪取你的 Instagram 帳號控制權，將你踢出（修改帳密），並私訊你的好友們散佈詐騙連結，或利用你的私密素材要脅你。",
+                deduction: 35,
+                clues: [
+                    {
+                        id: "clue_1_1",
+                        name: "錯假主網域名稱 (1nstagram)",
+                        desc: "網址不是 instagram.com，而是將 'i' 惡搞拼湊成數字 '1' 變為 `1nstagram`，且主網域在後半部為 `com-auth-secure.cc`！",
+                        hint: "注意瀏覽器網址的開頭拼音字！"
+                    },
+                    {
+                        id: "clue_1_2",
+                        name: "過度索求聯絡信箱密碼",
+                        desc: "在官方登入中絕對不應出現『還要驗證電子郵件密碼』的額外欄位，這是為了方便一次把你的帳號跟備份信箱一網打盡！",
+                        hint: "正常的社群登入只會要帳密或簡訊，不會突然要信箱的『信箱專屬密碼』。"
+                    },
+                    {
+                        id: "clue_1_3",
+                        name: "極度粗糙的文字編碼 (I0G0)",
+                        desc: "網頁底部模仿 Meta 商標時，拼錯單字且將 LOGO 直接打字成 `I0G0`，試圖用英文字母與數字 0 的混用來矇混過關。",
+                        hint: "仔計看看登入頁面下方的小字，是不是有仿冒的版權名稱？"
+                    }
+                ],
+                // Render custom realistic Instagram layout
+                renderHTML: () => {
+                    return `
+                    <div class="w-full max-w-sm mx-auto flex flex-col items-center py-4 px-2 sm:py-6 sm:px-4 font-sans text-slate-800">
+                        <div class="w-full bg-white border border-gray-300 rounded-md px-6 sm:px-8 pt-8 sm:pt-10 pb-5 sm:pb-6 shadow-sm flex flex-col items-center">
+                            <!-- Clue 1_3 Target: Logo typo -->
+                            <div id="target_clue_1_3" class="mb-4 sm:mb-6 cursor-pointer rounded transition-all duration-300 p-1" onclick="clueClicked('clue_1_3')">
+                                <h1 class="text-2xl sm:text-3xl font-serif font-black italic tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-purple-600 via-pink-500 to-amber-500">1nstagram</h1>
+                            </div>
+                            
+                            <p class="text-[11px] sm:text-xs text-gray-400 font-semibold text-center mb-4 sm:mb-6">
+                                登入以授權「誰在偷偷追蹤你」分析工具
+                            </p>
+                            
+                            <div class="w-full space-y-2">
+                                <input type="text" placeholder="手機號碼、用戶名稱或電子郵件" class="w-full text-xs bg-gray-50 border border-gray-300 rounded px-2.5 py-2 sm:py-2.5 outline-none focus:border-gray-400 placeholder:text-gray-400" disabled>
+                                
+                                <input type="password" placeholder="密碼" class="w-full text-xs bg-gray-50 border border-gray-300 rounded px-2.5 py-2 sm:py-2.5 outline-none focus:border-gray-400 placeholder:text-gray-400" disabled>
+                                
+                                <!-- Clue 1_2 Target: Extra verification field -->
+                                <div id="target_clue_1_2" class="p-1 rounded cursor-pointer transition-all duration-300" onclick="clueClicked('clue_1_2')">
+                                    <div class="bg-amber-50/70 border border-amber-300/60 rounded p-2 text-left">
+                                        <label class="block text-[9px] font-bold text-amber-700 uppercase mb-1">
+                                            <i class="fa-solid fa-shield-halved mr-1"></i> 帳戶安全多重驗證 (額外密碼)
+                                        </label>
+                                        <input type="password" placeholder="輸入您的綁定 Gmail 或 Outlook 密碼" class="w-full text-[10px] sm:text-[11px] bg-white border border-amber-300 rounded px-2 py-2 outline-none" disabled>
+                                    </div>
+                                </div>
+                                
+                                <button class="w-full bg-[#0095f6] text-white font-bold text-xs py-2 rounded-md mt-2 cursor-not-allowed opacity-85" disabled>
+                                    確認認證並開始分析
+                                </button>
+                            </div>
+                            
+                            <div class="w-full flex items-center justify-between my-4 text-xs text-gray-400 font-semibold">
+                                <div class="h-px bg-gray-200 flex-grow"></div>
+                                <span class="px-2">或</span>
+                                <div class="h-px bg-gray-200 flex-grow"></div>
+                            </div>
+                            
+                            <span class="text-xs text-blue-900 font-semibold cursor-not-allowed">忘記密碼？</span>
+                        </div>
+                        
+                        <div class="w-full bg-white border border-gray-300 rounded-md p-3 sm:p-4 mt-3 text-center text-xs">
+                            沒有帳號？ <span class="text-[#0095f6] font-bold cursor-not-allowed">註冊</span>
+                        </div>
+                    </div>
+                    `;
+                }
+            },
+            {
+                id: 2,
+                label: "CASE 02: 恐慌急迫陷阱",
+                title: "Google Workspace 安全警報！",
+                description: "信箱收到驚悚通知：「您的 Google 帳戶在俄羅斯遭異常嘗試登入！我們將在 10 分鐘內凍結您的信箱、Google Drive 雲端碟並抹除相本內所有相片素材。請立刻上傳證件證明這不是您！」",
+                url: "https://g00gle.com-accounts-alert.org/security-recovery",
+                urlSecure: false,
+                isPhishing: true,
+                stolenMaterials: "Google 雲端碟內所有學術檔案、照片素材、甚至身分證/學生證上的隱私證件大頭照（可被用於冒充貸款、二次詐騙、甚至合成不雅內容）。",
+                correctChoice: true, // Rejecting is correct
+                correctExplanation: "漂亮！這是標準的 Fear (恐慌/威脅法) 攻擊手法。Google 絕對不會限期 10 分鐘逼你做身分認證，也絕對不會使用 `g00gle.com`（零零代替歐歐）與惡意的外部 `.org` 網域名稱來威脅你抹除個人資料！",
+                wrongExplanation: "大錯特錯！一旦上傳身分證並填寫隱私安全密碼，駭客就能繞過安全防護。你不但把個人照片、姓名給出（極其危險的數位素材），更讓駭客控制你的重要雲端帳戶。",
+                deduction: 35,
+                clues: [
+                    {
+                        id: "clue_2_1",
+                        name: "g00gle.com 網頁偽裝網址",
+                        desc: "網址將官方的 `google` 偷換成帶有兩個數字 0 的 `g00gle`。更致命的是，真正的網域是後方的 `com-accounts-alert.org`，並非 google.com。",
+                        hint: "注意網址列中，google 英文名字的 spelling！"
+                    },
+                    {
+                        id: "clue_2_2",
+                        name: "製造極度恐慌的倒數威脅",
+                        desc: "在通知中塞入即將在 10 分鐘、24 小時內永久停用，或不點選就立即抹除所有儲存雲端的照片等素材。這是不成比例的威脅行為，正統官方絕不會這樣強硬逼迫。",
+                        hint: "詐騙信件最喜歡製造『時間快不夠了』的急迫感，強迫你失去冷靜。"
+                    },
+                    {
+                        id: "clue_2_3",
+                        name: "要求上傳高風險的證件照片素材",
+                        desc: "系統以『防範機器人惡意操作』為藉口，竟然強制要求上傳身分證、居留證、或是學生證的『清晰正面照片』。這就是藉機騙取你的核心證照素材！",
+                        hint: "一般的帳戶密碼重設只需要驗證信箱或簡訊，絕不可能索要實體身分證影本照片。"
+                    }
+                ],
+                // Render custom realistic Google Critical alert
+                renderHTML: () => {
+                    return `
+                    <div class="w-full max-w-lg mx-auto py-2 px-1 sm:py-4 sm:px-3 font-sans text-slate-800">
+                        <div class="bg-red-50 border-l-4 border-red-600 p-3 sm:p-4 rounded-r-lg mb-3 sm:mb-4 flex items-start space-x-2 sm:space-x-3">
+                            <i class="fa-solid fa-triangle-exclamation text-red-600 text-sm sm:text-lg mt-0.5"></i>
+                            <div>
+                                <h4 class="text-xs sm:text-sm font-bold text-red-900">帳戶即將在 10 分鐘內永久註銷！</h4>
+                                <p class="text-[10px] sm:text-[11px] text-red-700 leading-relaxed mt-0.5">
+                                    因偵測到多起異地登入嘗試，為確保資訊安全，若 10 分鐘內未完成實名校正，我們將依法抹除所有相簿、雲端硬碟、郵件等「核心素材」，不予保存。
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Clue 2_2 Target: Cruel urgent countdown -->
+                        <div id="target_clue_2_2" class="bg-slate-900 text-white p-2.5 sm:p-3 rounded-lg flex items-center justify-between mb-3 sm:mb-4 cursor-pointer transition-all duration-300" onclick="clueClicked('clue_2_2')">
+                            <span class="text-[10px] sm:text-xs font-bold text-red-400 uppercase tracking-widest"><i class="fa-solid fa-hourglass-start mr-1 text-amber-500 animate-spin"></i> 帳戶抹除倒計時 :</span>
+                            <span class="text-[10px] sm:text-xs font-mono font-black bg-red-950 px-2 py-0.5 rounded border border-red-800 text-red-400">09分 : 47秒</span>
+                        </div>
+
+                        <div class="border border-gray-200 rounded-xl bg-white p-4 sm:p-6 shadow-sm space-y-3 sm:space-y-4">
+                            <div class="flex items-center space-x-2">
+                                <span class="bg-slate-100 p-1 rounded text-red-600 font-bold text-[10px] sm:text-xs font-mono">G00gle Recovery</span>
+                                <h2 class="text-xs sm:text-sm font-extrabold text-slate-900">帳戶所有人緊急認證</h2>
+                            </div>
+
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-[10px] sm:text-[11px] font-bold text-slate-500 mb-1">認證帳戶 :</label>
+                                    <input type="text" value="student_account@g00gle-alert-mail.org" class="w-full text-xs bg-slate-50 border border-gray-200 rounded px-2.5 py-1.5 sm:py-2" disabled>
+                                </div>
+
+                                <!-- Clue 2_3 Target: Upload sensitive ID cards -->
+                                <div id="target_clue_2_3" class="bg-amber-50 border border-dashed border-amber-300 p-3 sm:p-4 rounded-xl cursor-pointer text-center transition-all duration-300" onclick="clueClicked('clue_2_3')">
+                                    <span class="text-amber-500 text-base sm:text-lg"><i class="fa-solid fa-id-card"></i></span>
+                                    <h4 class="text-[11px] sm:text-xs font-bold text-amber-900 mt-1">強制上傳身分證或學生證正面清晰照片</h4>
+                                    <p class="text-[9px] sm:text-[10px] text-amber-700 leading-relaxed mt-1">
+                                        (以機器核對本人，不合規定者將直接註銷 Google 登入功能)
+                                    </p>
+                                    <div class="mt-2 inline-block bg-amber-600 hover:bg-amber-500 text-white text-[9px] sm:text-[10px] font-bold px-2.5 py-1.5 rounded-md">
+                                        選取照片檔案上傳
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    `;
+                }
+            },
+            {
+                id: 3,
+                label: "CASE 03: 好玩 AI 變臉陷阱",
+                title: "AI 夢幻復古畢業頭像免費生成網",
+                description: "同學看到朋友圈流行「超酷美式復古年鑑大頭貼」產生器。主打完全免費，只要上傳 5 張清晰的不同角度臉部大頭照，就能立即線上幫你套用多款 AI 風格頭像！這是最新潮的技術，還是大有問題？",
+                url: "http://ai-yearbook-avatar.cc-viral-trends.top/generate",
+                urlSecure: false,
+                isPhishing: true,
+                stolenMaterials: "個人生物辨識特徵（高清晰人臉大頭照）。極容易被犯罪集團拿去餵養給 AI 深度偽造（Deepfake）工具，合成出極度逼真之詐騙影片/求救電話，或用於冒充生物識別解鎖。",
+                correctChoice: true, // Rejecting is correct
+                correctExplanation: "超強直覺！人臉照片是至關重要的『生物特徵數位素材』。這類網站不只網址可疑（不安全的 http 與未知之 `.top` 網域），更會藉著免費噱頭騙你交付大頭照。更可怕的是隱藏在服務條款裡的霸王授權，直接把你的肖像權送給他們當作 AI 訓練模型！",
+                wrongExplanation: "危險啊！你上傳了包含前、側、近景共 5 張超清晰的高解析臉部大頭照。不肖分子甚至能用這些照片生成虛假視訊，去欺騙你的家人朋友說你被綁架，以詐取高額贖金！",
+                deduction: 30,
+                clues: [
+                    {
+                        id: "clue_3_1",
+                        name: "不安全的主域名與 HTTP 連線",
+                        desc: "網站竟然使用的是早已淘汰且易受側錄的 `http://` 協定（瀏覽器地址欄鎖頭打不開、顯示紅字不安全）。此外，`.top` 這類新奇奇特的頂級網域通常被用於大批廉價註冊與釣魚快閃網站。",
+                        hint: "看看網頁安全協議（https 還是 http）以及網域名稱的最後綴詞！"
+                    },
+                    {
+                        id: "clue_3_2",
+                        name: "過度索取精準人臉生物特徵",
+                        desc: "一個簡單的 AI 生成，卻異常堅持要求必須包含：正面、左臉 45 度角、右臉 45 度角、甚至無遮擋的高清自拍照。這是在建立你的 3D 面部生物模組素材！",
+                        hint: "有甚麼工具會需要收集你完全無死角、不同方向、高清的私人照片？"
+                    },
+                    {
+                        id: "clue_3_3",
+                        name: "藏有『肖像永久出售與轉移』的條約",
+                        desc: "在非常不起眼的複選框條約中，暗中隱藏了：『用戶同意上傳之所有圖片，本平台有權將其無償使用、出售、修改並運用於任何全球性 AI 生成模型訓練...』。這表示你一上傳，你的肖像素材就永遠不屬於你了。",
+                        hint: "魔鬼藏在細節裡，看看登入前的聲明小字寫了什麼不可思議的霸權條款！"
+                    }
+                ],
+                // Render custom realistic AI Photo generator layout
+                renderHTML: () => {
+                    return `
+                    <div class="w-full max-w-md mx-auto py-3 px-2 sm:py-5 sm:px-3 font-sans text-slate-800">
+                        <div class="border border-gray-100 rounded-2xl bg-white p-4 sm:p-5 shadow-md flex flex-col items-center">
+                            
+                            <div class="text-center mb-3 sm:mb-4">
+                                <span class="bg-indigo-100 text-indigo-700 text-[9px] sm:text-[10px] font-bold tracking-widest px-2.5 py-1 rounded-full uppercase">AI YearBook Pro</span>
+                                <h2 class="text-sm sm:text-base font-extrabold text-slate-900 mt-1.5">免費生成：美式復古風 AI 大頭照</h2>
+                                <p class="text-[10px] sm:text-[11px] text-gray-500 mt-1">完全免費，5 秒即可為您生成精美的個人相冊！</p>
+                            </div>
+
+                            <!-- Showcase of fake result gallery -->
+                            <div class="grid grid-cols-4 gap-1.5 mb-3 sm:mb-4 w-full">
+                                <div class="bg-indigo-50 border border-indigo-100 rounded-lg h-12 flex items-center justify-center text-[11px] text-indigo-400">美式風</div>
+                                <div class="bg-indigo-50 border border-indigo-100 rounded-lg h-12 flex items-center justify-center text-[11px] text-indigo-400">學院風</div>
+                                <div class="bg-indigo-50 border border-indigo-100 rounded-lg h-12 flex items-center justify-center text-[11px] text-indigo-400">復古風</div>
+                                <div class="bg-indigo-50 border border-indigo-100 rounded-lg h-12 flex items-center justify-center text-[11px] text-indigo-400">動漫風</div>
+                            </div>
+
+                            <!-- Clue 3_2 Target: Strict biometric angle request -->
+                            <div id="target_clue_3_2" class="w-full bg-slate-50 border border-gray-200 p-3 sm:p-4 rounded-xl mb-3 sm:mb-4 cursor-pointer hover:border-red-400 transition-all duration-300" onclick="clueClicked('clue_3_2')">
+                                <h3 class="text-[11px] sm:text-xs font-bold text-slate-800 mb-1.5 flex items-center">
+                                    <span class="w-4 h-4 bg-indigo-600 text-white rounded-full inline-flex items-center justify-center text-[10px] mr-1.5">1</span>
+                                    上傳高清晰度的人臉素材
+                                </h3>
+                                <div class="grid grid-cols-3 gap-1.5">
+                                    <div class="border border-dashed border-gray-300 rounded p-1 text-center bg-white text-[9px] text-gray-400">
+                                        <i class="fa-solid fa-user-tie block mb-1"></i>正面自拍
+                                    </div>
+                                    <div class="border border-dashed border-gray-300 rounded p-1 text-center bg-white text-[9px] text-gray-400">
+                                        <i class="fa-solid fa-user-tie block mb-1"></i>左臉45度
+                                    </div>
+                                    <div class="border border-dashed border-gray-300 rounded p-1 text-center bg-white text-[9px] text-gray-400">
+                                        <i class="fa-solid fa-user-tie block mb-1"></i>右臉45度
+                                    </div>
+                                </div>
+                                <p class="text-[9px] text-rose-500 font-bold mt-1.5 text-left">
+                                    *警告：必須包含多角度無遮擋，以便 AI 模型算圖。
+                                </p>
+                            </div>
+
+                            <!-- Clue 3_3 Target: Secret terms check -->
+                            <div id="target_clue_3_3" class="w-full p-2 bg-amber-50 rounded-lg border border-amber-200 cursor-pointer transition-all duration-300 text-left" onclick="clueClicked('clue_3_3')">
+                                <label class="flex items-start space-x-1.5">
+                                    <input type="checkbox" checked class="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500" disabled>
+                                    <span class="text-[9px] leading-tight text-amber-900 block font-semibold">
+                                        我已閱讀並同意 <span class="underline text-indigo-700">隱私條約及授權聲明</span> (內含：授權本軟體無償使用、買賣及進行 AI 商業化模型訓練與臉部特徵比對)。
+                                    </span>
+                                </label>
+                            </div>
+
+                            <button class="w-full bg-gradient-to-r from-indigo-600 to-indigo-700 text-white font-bold text-xs py-2 sm:py-2.5 rounded-lg mt-3 sm:mt-4 cursor-not-allowed" disabled>
+                                開始免費生成 AI 復古照片
+                            </button>
+                        </div>
+                    </div>
+                    `;
+                }
+            }
+        ];
+
+        const toggleMicroscope = () => {
+            playSynthSound('click');
+            const btn = document.getElementById('microscopeToggleBtn');
+            const addressBar = document.getElementById('browserAddressBarContainer');
+            
+            microscopeActive = !microscopeActive;
+
+            if (microscopeActive) {
+                btn.className = "bg-rose-600 hover:bg-rose-500 active:scale-95 text-white text-[9px] sm:text-[11px] font-bold px-2 sm:px-3 py-1.5 rounded-lg flex items-center space-x-1 transition-all shadow-md animate-pulse";
+                document.getElementById('microscopeBtnText').innerText = "關閉顯微鏡";
+                document.getElementById('microscopeBtnTextMobile').innerText = "關閉";
+                addressBar.classList.add('scam-glow');
+                showToast("🔍 顯微鏡模式已開啟", "點選左側網頁或網址列中的『可疑部分』看穿貓膩！", "border-rose-500", "fa-magnifying-glass");
+                highlightTargets(true);
+            } else {
+                btn.className = "bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-[9px] sm:text-[11px] font-bold px-2 sm:px-3 py-1.5 rounded-lg flex items-center space-x-1 transition-all shadow-md";
+                document.getElementById('microscopeBtnText').innerText = "開啟顯微鏡";
+                document.getElementById('microscopeBtnTextMobile').innerText = "顯微鏡";
+                addressBar.classList.remove('scam-glow');
+                highlightTargets(false);
+            }
+        };
+
+        const highlightTargets = (enable) => {
+            const currentItem = scenariosData[currentStage];
+            
+            // Highlight Address Bar
+            const addressBar = document.getElementById('browserAddressBarContainer');
+            if (enable) {
+                addressBar.classList.add('hotspot-pulse', 'cursor-help');
+                addressBar.setAttribute('onclick', `clueClicked('clue_${currentStage + 1}_1')`);
+            } else {
+                addressBar.classList.remove('hotspot-pulse', 'cursor-help');
+                addressBar.removeAttribute('onclick');
+            }
+
+            // Highlight items in Viewport HTML
+            currentItem.clues.forEach(clue => {
+                const targetId = `target_${clue.id}`;
+                const el = document.getElementById(targetId);
+                if (el) {
+                    if (enable) {
+                        el.classList.add('hotspot-pulse', 'scam-glow');
+                    } else {
+                        el.classList.remove('hotspot-pulse', 'scam-glow');
+                    }
+                }
+            });
+        };
+
+        // Triggered when a hotspot / address bar is clicked
+        const clueClicked = (clueId) => {
+            if (!microscopeActive) {
+                showToast("提示 Suggestion", "請先點選右上角『開啟顯微鏡』以啟用分析探針！", "border-indigo-500", "fa-circle-exclamation");
+                playSynthSound('fail');
+                return;
+            }
+
+            const currentItem = scenariosData[currentStage];
+            const matchingClue = currentItem.clues.find(c => c.id === clueId);
+            
+            if (matchingClue) {
+                playSynthSound('clue');
+                foundClues[clueId] = true;
+                
+                // Redraw checklist and highlight item as detected
+                updateChecklist();
+                
+                // Visually mark element as completely resolved
+                const el = document.getElementById(`target_${clueId}`);
+                if (el) {
+                    el.classList.remove('scam-glow', 'hotspot-pulse');
+                    el.classList.add('detected-glow');
+                } else if (clueId.endsWith('_1')) {
+                    // It is address bar
+                    document.getElementById('browserAddressBarContainer').classList.remove('scam-glow', 'hotspot-pulse');
+                    document.getElementById('browserAddressBarContainer').classList.add('detected-glow');
+                }
+                
+                showToast("🎯 找出重大貓膩！", matchingClue.name, "border-emerald-500", "fa-bullseye");
+                checkStageCompletion();
+            }
+        };
+
+        // Update target checklist based on current stage found clues
+        const updateChecklist = () => {
+            const currentItem = scenariosData[currentStage];
+            const checklistContainer = document.getElementById('clueChecklist');
+            checklistContainer.innerHTML = '';
+
+            let matchedCount = 0;
+
+            currentItem.clues.forEach(clue => {
+                const isFound = !!foundClues[clue.id];
+                if (isFound) matchedCount++;
+
+                const row = document.createElement('div');
+                row.className = `p-2.5 rounded-lg border text-xs flex items-start space-x-2 transition-all ${isFound ? 'bg-emerald-950/20 border-emerald-500/30 text-slate-200' : 'bg-slate-950/60 border-slate-800 text-slate-400'}`;
+                
+                row.innerHTML = `
+                    <span class="${isFound ? 'text-emerald-400' : 'text-slate-600'} mt-0.5">
+                        <i class="fa-solid ${isFound ? 'fa-circle-check' : 'fa-circle-question'}"></i>
+                    </span>
+                    <div class="flex-grow">
+                        <div class="flex justify-between items-center">
+                            <strong class="font-bold text-[11px] ${isFound ? 'text-emerald-400' : 'text-slate-400'}">${clue.name}</strong>
+                            ${isFound ? '<span class="text-[9px] bg-emerald-500/15 px-1 rounded text-emerald-400">已突破</span>' : ''}
+                        </div>
+                        <p class="text-[10px] mt-0.5 leading-relaxed text-slate-300 ${isFound ? 'block' : 'hidden'}">${clue.desc}</p>
+                        <span class="text-[9px] text-slate-500 italic ${isFound ? 'hidden' : 'block'}">提示：${clue.hint}</span>
+                    </div>
+                `;
+                checklistContainer.appendChild(row);
+            });
+
+            // Update badge counters
+            document.getElementById('cluesFoundValue').innerText = `${matchedCount} / 3`;
+        };
+
+        const checkStageCompletion = () => {
+            const currentItem = scenariosData[currentStage];
+            const allFound = currentItem.clues.every(clue => !!foundClues[clue.id]);
+            
+            if (allFound) {
+                showToast("✨ 突破所有貓膩！", "你已看破這座網站的所有詐騙手腳，現在請在右下角做出正確的『安全決策』！", "border-indigo-500", "fa-award");
+            }
+        };
+
+        const loadStage = () => {
+            microscopeActive = false;
+            foundClues = {}; 
+            
+            // 每次載入新關卡時，自動平滑滾動回網頁最上方，確保學生第一時間看清模擬瀏覽器與新案件主題
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            const item = scenariosData[currentStage];
+
+            // Update Header address bar
+            document.getElementById('browserURL').innerText = item.url;
+            const lockIcon = document.getElementById('addressBarLockIcon');
+            if (item.urlSecure) {
+                lockIcon.className = "text-emerald-400";
+                lockIcon.innerHTML = `<i class="fa-solid fa-lock"></i>`;
+                document.getElementById('notSecureBadge').classList.add('hidden');
+            } else {
+                lockIcon.className = "text-rose-500 animate-pulse";
+                lockIcon.innerHTML = `<i class="fa-solid fa-lock-open"></i>`;
+                document.getElementById('notSecureBadge').classList.remove('hidden');
+            }
+
+            // Reset Microscope Toggle button appearance
+            const btn = document.getElementById('microscopeToggleBtn');
+            btn.className = "bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-[9px] sm:text-[11px] font-bold px-2 sm:px-3 py-1.5 rounded-lg flex items-center space-x-1 transition-all shadow-md";
+            document.getElementById('microscopeBtnText').innerText = "開啟顯微鏡";
+            document.getElementById('microscopeBtnTextMobile').innerText = "編微鏡";
+            document.getElementById('browserAddressBarContainer').classList.remove('scam-glow', 'detected-glow');
+
+            // Set Right Side Info
+            document.getElementById('caseLabel').innerText = item.label;
+            document.getElementById('caseTitle').innerText = item.title;
+            document.getElementById('caseDescription').innerText = item.description;
+
+            // Render view-port inside browser
+            document.getElementById('browserViewport').innerHTML = item.renderHTML();
+            
+            // Clean sidebar outputs
+            document.getElementById('explanationCard').classList.add('hidden');
+            document.getElementById('btnGuard').disabled = false;
+            document.getElementById('btnSubmit').disabled = false;
+
+            // Reset step tracker circles
+            for (let i = 0; i < 3; i++) {
+                const el = document.getElementById(`stepIndicator-${i}`);
+                if (i === currentStage) {
+                    el.className = "flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold transition-all bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20";
+                } else if (i < currentStage) {
+                    el.className = "flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold transition-all bg-emerald-500 text-slate-950";
+                } else {
+                    el.className = "flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold transition-all bg-slate-800 text-slate-400";
+                }
+            }
+
+            // Sync indicators
+            updateChecklist();
+        };
+
+        const commitDecision = (chooseGuard) => {
+            const item = scenariosData[currentStage];
+            
+            // Require user to at least try to find clues first (educational design)
+            const matchedCount = Object.keys(foundClues).length;
+            if (matchedCount < 1) {
+                showToast("偵探指令", "請先開啟右上角『顯微鏡模式』在頁面中尋找至少 1 個貓膩，否則無法提出防衛證據！", "border-amber-400", "fa-microscope");
+                playSynthSound('fail');
+                return;
+            }
+
+            // Ensure microscope highlighting is disabled
+            if (microscopeActive) {
+                toggleMicroscope(); 
+            }
+
+            document.getElementById('btnGuard').disabled = true;
+            document.getElementById('btnSubmit').disabled = true;
+
+            const card = document.getElementById('explanationCard');
+            const badge = document.getElementById('decisionFeedbackBadge');
+            const lossText = document.getElementById('lossDeductionText');
+            const explanation = document.getElementById('explanationText');
+            const stolenText = document.getElementById('stolenMaterialsText');
+
+            card.classList.remove('hidden');
+
+            const isCorrect = chooseGuard === item.correctChoice;
+
+            if (isCorrect) {
+                playSynthSound('success');
+                badge.className = "px-2.5 py-1 rounded text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+                badge.innerHTML = `<i class="fa-solid fa-circle-check mr-1"></i> 決策正確 Correct!`;
+                lossText.innerText = "防護盾: -0%";
+                lossText.className = "text-xs text-emerald-400 font-bold";
+                explanation.innerText = item.correctExplanation;
+            } else {
+                playSynthSound('fail');
+                // Deduct Health Points
+                shieldHealth = Math.max(0, shieldHealth - item.deduction);
+                document.getElementById('scoreValue').innerText = `${shieldHealth}%`;
+
+                badge.className = "px-2.5 py-1 rounded text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20";
+                badge.innerHTML = `<i class="fa-solid fa-skull-crossbones mr-1"></i> 決策失誤 Danger!`;
+                lossText.innerText = `防護盾: -${item.deduction}%`;
+                lossText.className = "text-xs text-rose-400 font-bold";
+                explanation.innerText = item.wrongExplanation;
+            }
+
+            stolenText.innerText = item.stolenMaterials;
+
+            // Scroll down in sidebar to ensure explanation is visible on mobile
+            card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        };
+
+        const advanceNextStage = () => {
+            playSynthSound('click');
+            if (currentStage < scenariosData.length - 1) {
+                currentStage++;
+                loadStage();
+            } else {
+                showFinalSummary();
+            }
+        };
+
+        // Populate and show the final result screen
+        const showFinalSummary = () => {
+            document.getElementById('scenariosWrapper').classList.add('hidden');
+            document.getElementById('resultsSection').classList.remove('hidden');
+            
+            // Sync final rates
+            document.getElementById('finalShieldRate').innerText = `${shieldHealth}%`;
+            document.getElementById('certShieldRate').innerText = `${shieldHealth}%`;
+            
+            const badgeEl = document.getElementById('finalBadge');
+            const statusBadge = document.getElementById('certStatusBadge');
+            
+            let statusText = "無懈可擊特級偵探";
+            if (shieldHealth === 100) {
+                statusText = "無懈可擊特級防衛官";
+                badgeEl.innerText = "🥇 殿堂級 • 無懈可擊資安防衛大師";
+                badgeEl.className = "text-sm md:text-base font-extrabold text-amber-400 block mt-2 animate-pulse";
+                statusBadge.className = "text-[9px] font-bold text-amber-400 flex items-center";
+            } else if (shieldHealth >= 60) {
+                statusText = "數位防護警覺好手";
+                badgeEl.innerText = "🥈 資深級 • 數位防護警覺好手";
+                badgeEl.className = "text-sm md:text-base font-extrabold text-indigo-300 block mt-2";
+                statusBadge.className = "text-[9px] font-bold text-indigo-300 flex items-center";
+            } else {
+                statusText = "待加強資安學兵";
+                badgeEl.innerText = "🥉 新手級 • 需加強訓練之資安學兵";
+                badgeEl.className = "text-sm md:text-base font-extrabold text-rose-400 block mt-2";
+                statusBadge.className = "text-[9px] font-bold text-rose-400 flex items-center";
+            }
+            statusBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-current mr-1.5 inline-block"></span>${statusText}`;
+
+            // Generate Serial Number
+            const randomId = Math.floor(1000 + Math.random() * 9000);
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            
+            document.getElementById('certSerial').innerText = `CD-${year}${month}${day}-${randomId}`;
+            document.getElementById('certDate').innerText = `DATE: ${year}.${month}.${day}`;
+
+            // Restore/Pre-fill default oath
+            restoreDefaultOath();
+        };
+
+        // Restore Default Oath Text based on performance
+        const restoreDefaultOath = () => {
+            const oathTextarea = document.getElementById('studentOathInput');
+            
+            let defaultOath = "我誓言牢記資安守則：\n一、死守數位個資素材，絕不在未經驗證的工具上傳姓名與照片。\n二、點擊前先看清官方網域名稱，不被恐慌威脅、獵奇好奇心牽著走！";
+            
+            if (shieldHealth < 100) {
+                defaultOath = "我宣誓守住「數位素材」防線！雖然在實戰中受過挫敗，但我已學到教訓：絕不在非官方頁面提交姓名與大頭照，先瞇起眼睛看網址與安全協議。我誓言守護數位隱私！";
+            }
+
+            oathTextarea.value = defaultOath;
+            syncCertificate();
+        };
+
+        // Real-time synchronization to visual certificate card
+        const syncCertificate = () => {
+            const nameInput = document.getElementById('studentNameInput').value.trim();
+            const oathInput = document.getElementById('studentOathInput').value;
+
+            document.getElementById('certName').innerText = nameInput || "安全防衛官";
+            document.getElementById('certOath').innerText = oathInput || "（請輸入您的防範安全誓詞宣言）";
+        };
+
+        // EXPORT FUNCTION (Converts DOM target container to clean PNG)
+        const downloadCertificatePNG = () => {
+            playSynthSound('success');
+            showToast("⏳ 正在產生證書檔案...", "系統正在努力為您生成 3D 高畫質防衛卡，請稍候 1~2 秒！", "border-indigo-500", "fa-spinner fa-spin");
+            
+            const target = document.getElementById('certificateCard');
+            const studentName = document.getElementById('studentNameInput').value.trim() || "數位防衛官";
+            
+            // Optimization for high-quality capture
+            const options = {
+                scale: 2, // 2x upscale for high resolution PNG
+                useCORS: true, 
+                backgroundColor: '#030712', // Match system background
+                logging: false,
+                removeContainer: true
+            };
+
+            setTimeout(() => {
+                html2canvas(target, options).then(canvas => {
+                    const imgData = canvas.toDataURL('image/png');
+                    
+                    // Create simulated download trigger
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = imgData;
+                    downloadLink.download = `資安防衛官證書_${studentName}.png`;
+                    document.body.appendChild(downloadLink);
+                    downloadLink.click();
+                    document.body.removeChild(downloadLink);
+                    
+                    showToast("🎉 下載成功！", "您的數位誓言證書已成功存為高解析度 PNG 圖片！", "border-emerald-500", "fa-file-image");
+                }).catch(err => {
+                    console.error("html2canvas generation failed: ", err);
+                    showToast("產出錯誤 Error", "證書轉換圖片失敗，請再試一次或手動擷取螢幕。", "border-rose-500", "fa-triangle-exclamation");
+                });
+            }, 600);
+        };
+
+        const resetTraining = () => {
+            playSynthSound('success');
+            currentStage = 0;
+            shieldHealth = 100;
+            foundClues = {};
+            document.getElementById('scoreValue').innerText = `${shieldHealth}%`;
+            document.getElementById('cluesFoundValue').innerText = "0 / 3";
+            document.getElementById('studentNameInput').value = '';
+            document.getElementById('studentOathInput').value = '';
+            
+            document.getElementById('scenariosWrapper').classList.remove('hidden');
+            document.getElementById('resultsSection').classList.add('hidden');
+            
+            loadStage();
+        };
+
+        // Window Initializer
+        window.onload = () => {
+            loadStage();
+        };
+    </script>
+</body>
+</html>
